@@ -4,7 +4,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using SystemEx;
 
-namespace Json
+namespace JsonEx
 {
 	/// <summary>
 	/// Аттрибут, который говорит о том что в классе не все филды нудо писать в json, а только помеченные таким же аттрибутом.

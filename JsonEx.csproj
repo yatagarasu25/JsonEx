@@ -7,8 +7,8 @@
     <ProjectGuid>{F641DD71-6BD2-4A54-AC8F-D3B0F7A9E5FD}</ProjectGuid>
     <OutputType>Library</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>Json</RootNamespace>
-    <AssemblyName>Json</AssemblyName>
+    <RootNamespace>JsonEx</RootNamespace>
+    <AssemblyName>JsonEx</AssemblyName>
     <TargetFrameworkVersion>v3.5</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <TargetFrameworkProfile>Unity Subset v3.5</TargetFrameworkProfile>

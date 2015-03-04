@@ -3,7 +3,7 @@ using System.Collections;
 using System.Reflection;
 using SystemEx;
 
-namespace Json
+namespace JsonEx
 {
 	public static class JboyEx
 	{
