@@ -31,6 +31,41 @@ namespace JsonEx
 	}
 
 	/// <summary>
+	/// Аттрибут, который говорит какая функция создаёт инстанс объекта при десериализации.
+	/// При отсутствии используется Activator.CreateInstance(type);
+	/// </summary>
+	public class JboyConstructorAttribute : Attribute
+	{
+	}
+
+	/// <summary>
+	/// Аттрибут, который говорит какая функция фызывается после записи всех полей, для записи какой=либо дополнительной информации.
+	/// </summary>
+	public class JboyCustomDataAttribute : Attribute
+	{
+	}
+
+	/// <summary>
+	/// Аттрибут, который говорит какая функция фызывается после загрузки данных объекта.
+	/// </summary>
+	public class JboyPostLoadAttribute : Attribute
+	{
+	}
+
+	/// <summary>
+	/// Аттрибут, который говорит какая функция фызывается для десериализации неизвестного аттрибута.
+	/// </summary>
+	public class JboyUnknownAttribute : Attribute
+	{
+	}
+
+	public interface IJboyCodec
+	{
+		void JsonSerializer(Jboy.JsonWriter writer, object obj);
+		object JsonDeserializer(Jboy.JsonReader reader, object obj);
+	}
+
+	/// <summary>
 	/// Класс который генерит Jboy кодеки для простых объектов.
 	/// На данный момент пишет все филды объекта в json.
 	/// Для объектов помеченных аттрибутом [JboySerializable] пишет только филды
@@ -43,17 +78,21 @@ namespace JsonEx
 	/// или
 	/// JboyCodec<SerailizableObject>.RegisterCodec();
 	/// </summary>
-	public class JboyCodec
+	public class JboyCodec : IJboyCodec
 	{
-		private delegate object JsonCustomDeserializer(Jboy.JsonReader reader);
+		public delegate object JsonCustomDeserializer(object o, Jboy.JsonReader reader);
+		public delegate void JsonCustomSerializer(object o, Jboy.JsonWriter writer, object value);
 
-		private delegate void JsonCustomSerializer(Jboy.JsonWriter writer, object value);
+		private MethodInfo ctor = null;
+		private MethodInfo postLoad = null;
+		private MethodInfo customData = null;
+		private MethodInfo unknowndData = null;
 
 		private Dictionary<string, FieldInfo> fields = new Dictionary<string, FieldInfo>();
 		private Dictionary<string, FieldInfo> customFields = new Dictionary<string, FieldInfo>();
 
-		private Dictionary<string, JsonCustomDeserializer> customDeserializers = null;
-		private Dictionary<string, JsonCustomSerializer> customSerializers = null;
+		private Dictionary<string, MethodInfo> customDeserializers = null;
+		private Dictionary<string, MethodInfo> customSerializers = null;
 
 		private Type type;
 
@@ -67,6 +106,25 @@ namespace JsonEx
 		public JboyCodec(Type type)
 		{
 			this.type = type;
+
+			foreach (var method in type.GetMethods(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)) {
+				if (method.HasAttribute<JboyConstructorAttribute>()) {
+					ctor = method;
+					break;
+				}
+			}
+
+			foreach (var method in type.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)) {
+				if (method.HasAttribute<JboyPostLoadAttribute>()) {
+					postLoad = method;
+				}
+				if (method.HasAttribute<JboyCustomDataAttribute>()) {
+					customData = method;
+				}
+				if (method.HasAttribute<JboyUnknownAttribute>()) {
+					unknowndData = method;
+				}
+			}
 
 			if (type.GetAttribute<JboySerializableAttribute>() == null) {
 				foreach (var field in type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)) {
@@ -96,20 +154,20 @@ namespace JsonEx
 			}
 
 			if (customFields.Count > 0) {
-				customDeserializers = new Dictionary<string, JsonCustomDeserializer>();
-				customSerializers = new Dictionary<string, JsonCustomSerializer>();
+				customDeserializers = new Dictionary<string, MethodInfo>();
+				customSerializers = new Dictionary<string, MethodInfo>();
 
 				foreach (var method in type.GetMethods(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)) {
 					if (method.Name == "JsonCustomDeserializer") {
 						JboyCustomSerializerForPropertyAttribute attribute = method.GetAttribute<JboyCustomSerializerForPropertyAttribute>();
 						if (attribute != null) {
-							customDeserializers.Add(attribute.name, (JsonCustomDeserializer)Delegate.CreateDelegate(typeof(JsonCustomDeserializer), method));
+							customDeserializers.Add(attribute.name, method);
 						}
 					}
 					else if (method.Name == "JsonCustomSerializer") {
 						JboyCustomSerializerForPropertyAttribute attribute = method.GetAttribute<JboyCustomSerializerForPropertyAttribute>();
 						if (attribute != null) {
-							customSerializers.Add(attribute.name, (JsonCustomSerializer)Delegate.CreateDelegate(typeof(JsonCustomSerializer), method));
+							customSerializers.Add(attribute.name, method);
 						}
 					}
 				}
@@ -119,18 +177,18 @@ namespace JsonEx
 		/// <summary>
 		/// Автоматически создаёт и решистрирует кодеки для заданного типа.
 		/// </summary>
-		public static void RegisterCodec(Type type)
+		public static IJboyCodec RegisterCodec(Type type)
 		{
 			if (type.GetAttribute<JboySerializableCustomAttribute>() == null) {
 				var codec = new JboyCodec(type);
-				addCodec.MakeGenericMethod(type).Invoke(null, new object[] { new Jboy.JsonDeserializer(codec.JsonDeserializer), new Jboy.JsonSerializer(codec.JsonSerializer) });
+				addCodec.MakeGenericMethod(type).Invoke(null, new object[] { new Jboy.JsonDeserializer(codec.JsonDeserializerNew), new Jboy.JsonSerializer(codec.JsonSerializer) });
+				return codec;
 			}
 			else {
-				addCodec.MakeGenericMethod(type).Invoke(null
-					, new object[] {
-                        Delegate.CreateDelegate(typeof(Jboy.JsonDeserializer), type.GetMethod("JsonDeserializer", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static))
-                        , Delegate.CreateDelegate(typeof(Jboy.JsonSerializer), type.GetMethod("JsonSerializer", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static))
-                    });
+				addCodec.MakeGenericMethod(type).Invoke(null, new object[] { 
+					(Jboy.JsonDeserializer)Delegate.CreateDelegate(typeof(Jboy.JsonDeserializer), type.GetMethod("JsonDeserializer", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic))
+					, (Jboy.JsonSerializer)Delegate.CreateDelegate(typeof(Jboy.JsonSerializer), type.GetMethod("JsonSerializer", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)) });
+				return null;
 			}
 		}
 
@@ -152,23 +210,33 @@ namespace JsonEx
 				var field = pair.Value;
 
 				writer.WritePropertyName(propertyName);
-				JsonCustomSerializer customSerializer;
+				MethodInfo customSerializer;
 				if (customSerializers.TryGetValue(propertyName, out customSerializer)) {
-					customSerializer(writer, field.GetValue(obj));
+					customSerializer.Invoke(null, new object[] { obj, writer, field.GetValue(obj) });
 				}
 				else {
 					Log.Error("No JsonCustomSerializer is defined for field {0}", propertyName);
 				}
 			}
+
+			if (customData != null)
+				customData.Invoke(obj, new object[] { writer });
+
 			writer.WriteObjectEnd();
+		}
+
+		public object JsonDeserializerNew(Jboy.JsonReader reader)
+		{
+			return JsonDeserializer(reader, null);
 		}
 
 		/// <summary>
 		/// Эту функцию надо зарегать как десериализатор.
 		/// </summary>
-		public object JsonDeserializer(Jboy.JsonReader reader)
+		public object JsonDeserializer(Jboy.JsonReader reader, object obj)
 		{
-			object obj = Activator.CreateInstance(type);
+			if (obj == null)
+				obj = ctor == null ? Activator.CreateInstance(type) : ctor.Invoke(null, null);
 
 			reader.ReadObjectStart();
 
@@ -179,21 +247,29 @@ namespace JsonEx
 					field.SetValue(obj, reader.ReadType(field.FieldType));
 				}
 				else if (customFields.TryGetValue(propertyName, out field)) {
-					JsonCustomDeserializer customDeserializer;
+					MethodInfo customDeserializer;
 					if (customDeserializers.TryGetValue(propertyName, out customDeserializer)) {
-						field.SetValue(obj, customDeserializer(reader));
+						field.SetValue(obj, customDeserializer.Invoke(null, new object[] { obj, reader }));
 					}
 					else {
 						Log.Error("No JsonCustomDeserializer is defined for field {0}", propertyName);
 					}
 				}
 				else {
-					Log.Error("Unknown filed `{0}` in json for object `{1}`.", propertyName, type.Name);
-					object value;
-					reader.Read(out value);
+					if (unknowndData == null) {
+						Log.Error("Unknown field `{0}` in json for object `{1}`.", propertyName, type.Name);
+						object value;
+						reader.Read(out value);
+					}
+					else {
+						unknowndData.Invoke(obj, new object[] { propertyName, reader });
+					}
 				}
 			}
 			reader.ReadObjectEnd();
+
+			if (postLoad != null)
+				postLoad.Invoke(obj, null);
 
 			return obj;
 		}
