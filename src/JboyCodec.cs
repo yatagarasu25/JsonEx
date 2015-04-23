@@ -158,13 +158,13 @@ namespace JsonEx
 				customSerializers = new Dictionary<string, MethodInfo>();
 
 				foreach (var method in type.GetMethods(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)) {
-					if (method.Name == "JsonCustomDeserializer") {
+					if (method.Name.StartsWith("JsonCustomDeserializer")) {
 						JboyCustomSerializerForPropertyAttribute attribute = method.GetAttribute<JboyCustomSerializerForPropertyAttribute>();
 						if (attribute != null) {
 							customDeserializers.Add(attribute.name, method);
 						}
 					}
-					else if (method.Name == "JsonCustomSerializer") {
+					else if (method.Name.StartsWith("JsonCustomSerializer")) {
 						JboyCustomSerializerForPropertyAttribute attribute = method.GetAttribute<JboyCustomSerializerForPropertyAttribute>();
 						if (attribute != null) {
 							customSerializers.Add(attribute.name, method);
