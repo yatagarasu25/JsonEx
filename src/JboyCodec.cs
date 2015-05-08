@@ -216,6 +216,7 @@ namespace JsonEx
 				}
 				else {
 					Log.Error("No JsonCustomSerializer is defined for field {0}", propertyName);
+					writer.WriteNull();
 				}
 			}
 
