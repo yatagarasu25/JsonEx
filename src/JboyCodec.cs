@@ -38,6 +38,16 @@ namespace JsonEx
 	{
 	}
 
+	public class JboyFactoryAttribute : Attribute
+	{
+		public MethodInfo factoryMethod;
+
+		public JboyFactoryAttribute(Type factory)
+		{
+			factoryMethod = factory.GetMethod("Create", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+		}
+	}
+
 	/// <summary>
 	/// Аттрибут, который говорит какая функция фызывается после записи всех полей, для записи какой=либо дополнительной информации.
 	/// </summary>
@@ -88,6 +98,7 @@ namespace JsonEx
 		private MethodInfo customData = null;
 		private MethodInfo unknowndData = null;
 
+		private FieldInfo factoryField = null;
 		private Dictionary<string, FieldInfo> fields = new Dictionary<string, FieldInfo>();
 		private Dictionary<string, FieldInfo> customFields = new Dictionary<string, FieldInfo>();
 
@@ -115,41 +126,44 @@ namespace JsonEx
 			}
 
 			foreach (var method in type.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)) {
-				if (method.HasAttribute<JboyPostLoadAttribute>()) {
-					postLoad = method;
-				}
-				if (method.HasAttribute<JboyCustomDataAttribute>()) {
-					customData = method;
-				}
-				if (method.HasAttribute<JboyUnknownAttribute>()) {
-					unknowndData = method;
+				foreach (var attribute in method.GetCustomAttributes(true)) {
+					if (attribute.GetType() == typeof(JboyPostLoadAttribute)) {
+						postLoad = method;
+					}
+					else if (attribute.GetType() == typeof(JboyCustomDataAttribute)) {
+						customData = method;
+					}
+					else if (attribute.GetType() == typeof(JboyUnknownAttribute)) {
+						unknowndData = method;
+					}
 				}
 			}
 
-			if (type.GetAttribute<JboySerializableAttribute>() == null) {
-				foreach (var field in type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)) {
-					if (field.GetAttribute<CompilerGeneratedAttribute>() != null) {
+			bool typeHasSerializableAttribute = type.HasAttribute<JboySerializableAttribute>();
+			foreach (var field in type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)) {
+				bool skip = false;
+
+				foreach (var attribute in field.GetCustomAttributes(true)) {
+					if (attribute.GetType() == typeof(CompilerGeneratedAttribute))
 						continue;
+
+					if (attribute.GetType() == typeof(JboyFactoryAttribute)) {
+						factoryField = field;
+						ctor = ((JboyFactoryAttribute)attribute).factoryMethod;
+						skip = true;
 					}
-					if (field.GetAttribute<JboySerializableCustomAttribute>() != null) {
+					else if (attribute.GetType() == typeof(JboySerializableCustomAttribute)) {
 						customFields.Add(field.Name, field);
+						skip = true;
 					}
-					else {
+					else if (attribute.GetType() == typeof(JboySerializableAttribute)) {
 						fields.Add(field.Name, field);
+						skip = true;
 					}
 				}
-			}
-			else {
-				foreach (var field in type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)) {
-					if (field.GetAttribute<CompilerGeneratedAttribute>() != null) {
-						continue;
-					}
-					if (field.GetAttribute<JboySerializableAttribute>() != null) {
-						fields.Add(field.Name, field);
-					}
-					else if (field.GetAttribute<JboySerializableCustomAttribute>() != null) {
-						customFields.Add(field.Name, field);
-					}
+
+				if (!skip && !typeHasSerializableAttribute) {
+					fields.Add(field.Name, field);
 				}
 			}
 
@@ -198,6 +212,12 @@ namespace JsonEx
 		public void JsonSerializer(Jboy.JsonWriter writer, object obj)
 		{
 			writer.WriteObjectStart();
+
+			if (factoryField != null) {
+				writer.WritePropertyName(factoryField.Name);
+				writer.WriteType(factoryField.GetValue(obj), factoryField.FieldType);
+			}
+
 			foreach (var pair in fields) {
 				var propertyName = pair.Key;
 				var field = pair.Value;
@@ -236,11 +256,43 @@ namespace JsonEx
 		/// </summary>
 		public object JsonDeserializer(Jboy.JsonReader reader, object obj)
 		{
-			if (obj == null)
-				obj = ctor == null ? Activator.CreateInstance(type) : ctor.Invoke(null, null);
-
 			reader.ReadObjectStart();
 
+			var codec = this;
+
+			if (obj == null) {
+				if (factoryField != null) {
+					string factoryPropertyName;
+					if (reader.TryReadPropertyName(out factoryPropertyName)) {
+						if (factoryPropertyName == factoryField.Name) {
+							obj = ctor.Invoke(null, new object[] { reader.ReadType(factoryField.FieldType) });
+							var objCodec = Json.GetCodec(obj.GetType()) as JboyCodec;
+
+							if (objCodec != null)
+								codec = objCodec;
+						}
+						else {
+							Log.Error("Missing factory filed {0}, got {1}.", factoryField.Name, factoryPropertyName);
+						}
+					}
+				}
+				else {
+					obj = ctor == null ? Activator.CreateInstance(type) : ctor.Invoke(null, null);
+				}
+			}
+
+			codec.JsonReadFields(reader, obj);
+
+			reader.ReadObjectEnd();
+
+			if (postLoad != null)
+				postLoad.Invoke(obj, null);
+
+			return obj;
+		}
+
+		protected void JsonReadFields(Jboy.JsonReader reader, object obj)
+		{
 			string propertyName;
 			while (reader.TryReadPropertyName(out propertyName)) {
 				FieldInfo field;
@@ -267,12 +319,6 @@ namespace JsonEx
 					}
 				}
 			}
-			reader.ReadObjectEnd();
-
-			if (postLoad != null)
-				postLoad.Invoke(obj, null);
-
-			return obj;
 		}
 	}
 }

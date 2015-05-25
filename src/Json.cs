@@ -11,7 +11,7 @@ namespace JsonEx
 
 		private static Dictionary<Type, IJboyCodec> registeredCodecs = new Dictionary<Type, IJboyCodec>();
 
-		private static IJboyCodec RegisterCodec(Type type)
+		public static IJboyCodec GetCodec(Type type)
 		{
 			if (type.IsList()) {
 				type = type.GetListItemType();
@@ -26,16 +26,16 @@ namespace JsonEx
 			return codec;
 		}
 
-		private static IJboyCodec RegisterCodec<T>()
+		public static IJboyCodec GetCodec<T>()
 			where T : new()
 		{
-			return RegisterCodec(typeof(T));
+			return GetCodec(typeof(T));
 		}
 
 		public static T ReadObject<T>(string json)
 			where T : new()
 		{
-			RegisterCodec<T>();
+			GetCodec<T>();
 
 			return Jboy.Json.ReadObject<T>(json);
 		}
@@ -43,7 +43,7 @@ namespace JsonEx
 		public static T ReadObject<T>(T o, string json)
 			where T : new()
 		{
-			var codec = RegisterCodec<T>();
+			var codec = GetCodec<T>();
 
 			return (T)codec.JsonDeserializer(new Jboy.JsonReader(json), o);
 		}
@@ -51,7 +51,7 @@ namespace JsonEx
 		public static T ReadObject<T>(Jboy.JsonReader reader)
 			where T : new()
 		{
-			RegisterCodec<T>();
+			GetCodec<T>();
 
 			return Jboy.Json.ReadObject<T>(reader);
 		}
@@ -75,7 +75,7 @@ namespace JsonEx
 
 		public static string WriteObject(object value)
 		{
-			RegisterCodec(value.GetType());
+			GetCodec(value.GetType());
 
 			var writer = new Jboy.JsonWriter(false, prettyPrint, 4);
 			Jboy.Json.WriteObject(value, writer);
@@ -84,7 +84,7 @@ namespace JsonEx
 
 		public static void WriteObject(object value, Jboy.JsonWriter writer)
 		{
-			RegisterCodec(value.GetType());
+			GetCodec(value.GetType());
 
 			Jboy.Json.WriteObject(value, writer);
 		}
