@@ -48,11 +48,11 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Data.cs" />
-    <Compile Include="FactoryTest.cs" />
+    <Compile Include="src.Test\Data.cs" />
+    <Compile Include="src.Test\FactoryTest.cs" />
     <Compile Include="Properties\AssemblyInfo.Test.cs" />
-    <Compile Include="ListTest.cs" />
-    <Compile Include="SimpleTest.cs" />
+    <Compile Include="src.Test\ListTest.cs" />
+    <Compile Include="src.Test\SimpleTest.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
